@@ -1,0 +1,53 @@
+#cloud-config
+write_files:
+  - path: /opt/bin/install-matchbox
+    owner: core
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      TECTONIC_RELEASE=1.5.2-tectonic.2
+      pushd /home/core
+
+      wget -q https://releases.tectonic.com/tectonic-$TECTONIC_RELEASE.tar.gz
+      tar xzvf tectonic-$TECTONIC_RELEASE.tar.gz
+      cd tectonic/matchbox
+
+      cp contrib/systemd/matchbox-for-tectonic.service /etc/systemd/system/matchbox.service
+
+      cd scripts/tls 
+      echo $COREOS_PUBLIC_IPV4
+      export SAN=IP.1:$COREOS_PUBLIC_IPV4
+      echo $SAN
+      ./cert-gen
+      mkdir -p /etc/matchbox
+      cp ca.crt server.crt server.key /etc/matchbox/
+
+      mkdir -p /var/lib/matchbox/assets/coreos/1235.6.0
+
+      systemctl daemon-reload
+      systemctl enable matchbox
+      systemctl enable tectonic-installer.service
+      systemctl start matchbox
+      systemctl start tectonic-installer.service
+
+coreos:
+  units:
+    - name: "install-matchbox.service"
+      command: "start"
+      content: |
+        [Unit]
+        Description=Installer Matchbox
+        After=docker.service
+
+        [Service]
+        EnvironmentFile=/etc/environment
+        ExecStart=/opt/bin/install-matchbox
+    - name: "tectonic-installer.service"
+      command: "stop"
+      content: |
+        [Unit]
+        Description=Tectonic Installer
+        After=install-matchbox.service
+
+        [Service]
+        ExecStart=/home/core/tectonic/tectonic-installer/linux/installer -address 0.0.0.0:80 -open-browser=false
